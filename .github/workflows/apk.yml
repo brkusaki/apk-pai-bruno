@@ -72,5 +72,5 @@ jobs:
       - uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ github.run_number }}
-          name: Pai da Maya v${{ github.run_number }}
+          name: Maya v${{ github.run_number }}
           files: Pai-da-Maya.apk

@@ -6,6 +6,7 @@ const LS = 'pai:v1';
 const MIN = 60e3, H = 60 * MIN, DIA = 24 * H;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
+const G = window.GUIAS || [], CATS = window.CATS || [];
 const ic = (n, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${(window.ICONES || {})[n] || ''}</svg>`;
 
 /* ---------------- Dados ---------------- */
@@ -15,6 +16,7 @@ const S = carregar();
 S.cfg = Object.assign({ pai: 'Bruno', mae: 'Maíra', bebe: 'Maya', nasc: '', tema: 'auto', luz: 45 }, S.cfg || {});
 for (const k of ['ped', 'est', 'compras', 'diario']) S[k] = Array.isArray(S[k]) ? S[k] : [];
 S.nid = S.nid || 100;
+S.lidos = S.lidos && typeof S.lidos === 'object' ? S.lidos : {};
 const cfg = S.cfg;
 const salvar = () => { if (!LEU_OK) return; try { localStorage.setItem(LS, JSON.stringify(S)); } catch { toast('Sem espaço para salvar!'); } };
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -170,7 +172,7 @@ function tema() {
 }
 
 /* ---------------- Telas ---------------- */
-const V = { tab: 'inicio', est: 'itens' };
+const V = { tab: 'inicio', est: 'itens', guia: null, cat: 'todos', q: '' };
 const baixos = () => S.est.filter(i => i.qtd != null && i.qtd <= i.min);
 const abertos = () => S.ped.filter(p => !p.feito).sort((a, b) => b.criado - a.criado);
 const diarioOrd = () => S.diario.slice().sort((a, b) => b.ts - a.ts);
@@ -191,6 +193,10 @@ function telaInicio() {
   } else {
     h += `<div class="capa"><div class="deco">${ic('baby')}</div><div class="rotulo">Pai a caminho</div><div class="grande">A ${esc(cfg.bebe)} está chegando</div><div class="sub">Quando ela nascer, é só avisar aqui.</div><button class="btn" data-a="nasceu">${ic('heart')} A ${esc(cfg.bebe)} nasceu!</button></div>`;
   }
+  const prox = proximoGuia(), lidosN = G.filter(g => S.lidos[g.id]).length;
+  h += `<div class="sec-titulo"><h3>Guia do Pai</h3><button class="btn sec mini" data-a="ir" data-t="guia">Ver tudo (${lidosN}/${G.length})</button></div>`;
+  if (prox) h += itemGuia(prox);
+  h += `<div class="grade"><button class="acao" data-a="guiaAbrir" data-id="sos-bebe" style="margin:0"><i class="bolha b-alerta" style="font-size:1.3rem">🚨</i><span>Alerta da Maya</span></button><a class="acao" href="tel:192" style="margin:0"><i class="bolha b-alerta" style="font-size:1.3rem">🚑</i><span>SAMU 192</span></a></div>`;
   h += `<button class="acao" data-a="luzAbrir"><i class="bolha b-alerta">${ic('moon')}</i><span>Modo noturno<small>Tela vermelha e escura para a madrugada</small></span></button>`;
 
   const ab = abertos();
@@ -258,10 +264,63 @@ function telaDiario() {
   <div class="card">${l.length ? l.map(e => entradaDiario(e)).join('') : `<div class="vazio">Aqui ficam os momentos, os marcos e as frases que você não quer esquecer.</div>`}</div>`;
 }
 
+
+/* ---------------- Guia do Pai ---------------- */
+const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+const guiaPorId = id => G.find(g => g.id === id);
+const proximoGuia = () => G.find(g => !S.lidos[g.id]);
+function itemGuia(g) {
+  return `<button class="acao" data-a="guiaAbrir" data-id="${g.id}"><i class="bolha ${g.cat === 'sos' ? 'b-alerta' : 'b-pri'}" style="font-size:1.4rem">${g.e}</i><span style="flex:1;min-width:0">${esc(g.t)}<small>${esc(g.r)}</small></span>${S.lidos[g.id] ? '<span class="tag verde">lido</span>' : ''}</button>`;
+}
+function listaGuias() {
+  const q = norm(V.q);
+  const l = G.filter(g => (V.cat === 'todos' || g.cat === V.cat) && (!q || norm([g.t, g.r, ...g.p].join(' ')).includes(q)));
+  return l.length ? l.map(itemGuia).join('') : '<div class="card vazio">Nada encontrado. Tente outra palavra.</div>';
+}
+function detalheGuia(g) {
+  if (!g) { V.guia = null; return telaGuia(); }
+  const cat = (CATS.find(c => c[0] === g.cat) || [0, ''])[1];
+  return `<button class="btn sec mini" data-a="guiaVoltar">← Guia</button>
+  <div class="card" style="margin-top:12px"><div class="rotulo">${esc(cat)}</div>
+    <h2 style="margin-top:6px">${g.e} ${esc(g.t)}</h2><p class="mute">${esc(g.r)}</p>
+    <ol class="passos ${g.lista ? 'lista' : ''}">${g.p.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
+    <div class="linha" style="margin-top:14px;flex-wrap:wrap"><button class="btn" data-a="passoAbrir" data-id="${g.id}">Um passo por vez</button><button class="btn sec" data-a="guiaLido" data-id="${g.id}">${S.lidos[g.id] ? '✅ Lido' : 'Marcar como lido'}</button></div></div>
+  ${g.a && g.a.length ? `<div class="card alerta"><h3>⚠️ Atenção</h3>${g.a.map(x => `<p>${esc(x)}</p>`).join('')}</div>` : ''}
+  ${g.d ? `<div class="card" style="border-color:var(--ouro);background:var(--ouro-s)"><h3>💡 Dica de pai</h3><p style="margin:0">${esc(g.d)}</p></div>` : ''}
+  <p class="mute" style="font-size:.8rem;text-align:center">Fonte: ${esc(g.f || 'Boas práticas')}. Não substitui o pediatra.</p>`;
+}
+function telaGuia() {
+  if (V.guia) return detalheGuia(guiaPorId(V.guia));
+  const lidos = G.filter(g => S.lidos[g.id]).length;
+  return `<h2>Guia do Pai</h2><p class="mute">Passo a passo para quem está começando. Você leu ${lidos} de ${G.length}. Guia de apoio: não substitui o pediatra.</p>
+  <input id="gq" type="search" placeholder="Buscar: banho, febre, cólica..." value="${esc(V.q)}" autocomplete="off">
+  <div class="abas" style="margin-top:10px">${[['todos', 'Todos'], ...CATS].map(([k, n]) => `<button class="${V.cat === k ? 'on' : ''}" data-a="guiaCat" data-t="${k}">${n}</button>`).join('')}</div>
+  <div id="guiaLista">${listaGuias()}</div>`;
+}
+const PS = { g: null, i: 0 };
+function passoRender() {
+  const g = PS.g, n = g.p.length;
+  $('#passoT').textContent = g.t;
+  $('#passoN').textContent = (g.lista ? 'Item ' : 'Passo ') + (PS.i + 1) + ' de ' + n;
+  $('#passoTxt').textContent = g.p[PS.i];
+  $('#passoA').disabled = PS.i === 0;
+  $('#passoP').textContent = PS.i === n - 1 ? 'Concluir' : 'Próximo';
+}
+function passo(abrir, g) {
+  $('#passo').hidden = !abrir;
+  if (abrir && g) { PS.g = g; PS.i = 0; passoRender(); telaAcesa(true); } else telaAcesa(false);
+}
+$('#passoX').addEventListener('click', () => passo(false));
+$('#passoA').addEventListener('click', () => { if (PS.i > 0) { PS.i--; passoRender(); } });
+$('#passoP').addEventListener('click', () => {
+  if (PS.i < PS.g.p.length - 1) { PS.i++; passoRender(); return; }
+  S.lidos[PS.g.id] = S.lidos[PS.g.id] || Date.now(); salvar(); passo(false); render(); toast('Guia concluído ✅');
+});
+
 function telaMais() {
   return `<h2>Mais</h2>
   <div class="card"><h3>Aparência</h3><div class="chips">${[['auto', 'Automático'], ['claro', 'Claro'], ['noite', 'Escuro']].map(([k, n]) => `<button class="chip ${cfg.tema === k ? 'on' : ''}" data-a="tema" data-t="${k}">${n}</button>`).join('')}</div><p class="mute">No automático, fica escuro das 19h às 6h.</p></div>
-  <div class="card"><h3>Nascimento da ${esc(cfg.bebe)}</h3><input id="cfgNasc" type="datetime-local" value="${cfg.nasc ? paraInput(+new Date(cfg.nasc)) : ''}"><p class="mute">Usado para contar a idade e os dias de vida no app.</p></div>
+  <div class="card"><h3>Nascimento da ${esc(cfg.bebe)}</h3><div class="linha entre"><span>${cfg.nasc ? dataHora(+new Date(cfg.nasc)) : 'Ainda não nasceu'}</span><button class="btn sec mini" data-a="nasceu">${cfg.nasc ? 'Alterar' : 'Definir'}</button></div><p class="mute">Usado para contar a idade e os dias de vida no app.</p></div>
   <div class="card"><h3>Notificações</h3><div class="linha entre"><span id="notifStatus" class="mute">verificando...</span><button class="btn sec mini" data-a="notifPedir">Permitir</button></div></div>
   <div class="card"><h3>Dados</h3><p class="mute">Tudo fica só neste celular. Se trocar de aparelho, leve um backup (as fotos não vão no backup).</p>
     <div class="chips"><button class="btn sec mini" data-a="backup">${ic('download')} Backup</button><button class="btn sec mini" data-a="restaurar">Restaurar</button><button class="btn sec mini" data-a="exportarDiario">${ic('share-2')} Enviar diário</button></div></div>
@@ -275,12 +334,12 @@ function render() {
   $('#subtitulo').textContent = `${DIAS[d.getDay()]}, ${d.getDate()} de ${MESES[d.getMonth()]}`;
   $$('#nav button').forEach(b => b.classList.toggle('ativo', b.dataset.tab === V.tab));
   const sy = window.scrollY;
-  $('#view').innerHTML = { inicio: telaInicio, pedidos: telaPedidos, estoque: telaEstoque, diario: telaDiario, mais: telaMais }[V.tab]();
+  $('#view').innerHTML = { inicio: telaInicio, guia: telaGuia, pedidos: telaPedidos, estoque: telaEstoque, diario: telaDiario, mais: telaMais }[V.tab]();
   window.scrollTo(0, sy);
   carregarFotos();
   if (V.tab === 'mais') N.status().then(s => { const el = $('#notifStatus'); if (el) el.textContent = s === 'granted' ? '✅ Ativadas' : '⚠️ Não ativadas: toque em Permitir'; });
 }
-function ir(tab) { V.tab = tab; window.scrollTo(0, 0); render(); }
+function ir(tab) { V.tab = tab; V.guia = null; window.scrollTo(0, 0); render(); }
 
 /* ---------------- Modais ---------------- */
 let edFoto = null, edFotoApagar = false, edTag = 'momento';
@@ -329,7 +388,13 @@ const PRESETS = [['Fraldas', 'un', 20], ['Lenços umedecidos', 'pacotes', 1], ['
 
 const ACOES = {
   ir: el => ir(el.dataset.t),
-  nasceu: () => modal(`<h2>A ${esc(cfg.bebe)} nasceu! 💙</h2><label>Data e hora do nascimento</label><input id="nNasc" type="datetime-local" value="${paraInput(Date.now())}"><button class="btn bloco" style="margin-top:18px" data-a="nasceuOk">Salvar</button>`, true),
+  guiaAbrir: el => { V.tab = 'guia'; V.guia = el.dataset.id; window.scrollTo(0, 0); render(); },
+  guiaVoltar: () => { V.guia = null; render(); },
+  guiaCat: el => { V.cat = el.dataset.t; render(); },
+  guiaLido: el => { const id = el.dataset.id; if (S.lidos[id]) delete S.lidos[id]; else S.lidos[id] = Date.now(); salvar(); render(); },
+  passoAbrir: el => passo(true, guiaPorId(el.dataset.id)),
+  nasceu: () => modal(`<h2>A ${esc(cfg.bebe)} nasceu! 💙</h2><label>Data e hora do nascimento</label><input id="nNasc" type="datetime-local" value="${paraInput(cfg.nasc ? +new Date(cfg.nasc) : Date.now())}"><button class="btn bloco" style="margin-top:18px" data-a="nasceuOk">Salvar</button>${cfg.nasc ? '<button class="btn sec bloco" style="margin-top:10px" data-a="nasceuLimpar">Remover data</button>' : ''}`, true),
+  nasceuLimpar: () => { cfg.nasc = ''; salvar(); fecharModal(); render(); },
   nasceuOk: () => { cfg.nasc = new Date(deInput($('#nNasc').value)).toISOString(); salvar(); fecharModal(); render(); toast('Parabéns, pai! 💙', 4000); },
 
   /* pedidos */
@@ -392,7 +457,7 @@ const ACOES = {
   /* mais */
   tema: el => { cfg.tema = el.dataset.t; salvar(); render(); },
   notifPedir: async () => { const ok = await N.pedir(); toast(ok ? 'Notificações ativadas ✅' : 'Permissão negada. Ative nas configurações do Android.', 4000); render(); },
-  backup: () => compartilhar('Backup Pai da Maya', JSON.stringify({ app: 'pai-da-maya', quando: Date.now(), cfg: S.cfg, ped: S.ped, est: S.est, compras: S.compras, diario: S.diario.map(e => ({ ...e, foto: false })) })),
+  backup: () => compartilhar('Backup Maya', JSON.stringify({ app: 'pai-da-maya', quando: Date.now(), cfg: S.cfg, ped: S.ped, est: S.est, compras: S.compras, diario: S.diario.map(e => ({ ...e, foto: false })) })),
   restaurar: () => modal(`<h2>Restaurar backup</h2><p class="mute">Cole o texto do backup. Isso substitui o que está no app agora.</p><textarea id="rTxt" placeholder="Cole aqui"></textarea><button class="btn perigo bloco" style="margin-top:14px" data-a="restaurarOk">Restaurar</button>`),
   restaurarOk: () => {
     try {
@@ -417,6 +482,7 @@ document.addEventListener('keydown', e => {
   if (e.key !== 'Enter' || !e.target.matches('#pedTxt,#compraTxt')) return;
   e.preventDefault(); const b = e.target.parentElement.querySelector('button[data-a]'); if (b) b.click();
 });
+document.addEventListener('input', e => { if (e.target.id === 'gq') { V.q = e.target.value; const l = $('#guiaLista'); if (l) l.innerHTML = listaGuias(); } });
 document.addEventListener('change', async e => {
   const el = e.target;
   if (el.id === 'cfgNasc') { cfg.nasc = el.value ? new Date(deInput(el.value)).toISOString() : ''; salvar(); toast('Salvo ✅'); }
@@ -426,10 +492,18 @@ document.addEventListener('change', async e => {
   }
 });
 $$('#nav button').forEach(b => { b.insertAdjacentHTML('afterbegin', `<i>${ic(b.dataset.ic)}</i>`); b.addEventListener('click', () => ir(b.dataset.tab)); });
+$('#btnMais').innerHTML = ic('settings');
+$('#btnMais').addEventListener('click', () => ir('mais'));
 $('#btnTema').addEventListener('click', () => { cfg.tema = document.documentElement.classList.contains('noite') ? 'claro' : 'noite'; salvar(); render(); });
 
 /* ---------------- Modo noturno (luz vermelha) ---------------- */
 let wake = null, luzTimer = 0;
+async function telaAcesa(on) {
+  try {
+    if (on) { if ('wakeLock' in navigator && !wake) wake = await navigator.wakeLock.request('screen'); }
+    else if (wake && $('#luz').hidden && $('#passo').hidden) { await wake.release(); wake = null; }
+  } catch {}
+}
 function luzBrilho() { $('#luz').style.setProperty('--v', (cfg.luz || 45) / 100); $('#luzBrilho').value = cfg.luz || 45; }
 async function luz(abrir) {
   const el = $('#luz');
@@ -438,10 +512,10 @@ async function luz(abrir) {
   if (abrir) {
     luzBrilho();
     const t = () => { $('#luzHora').textContent = hora(Date.now()); }; t(); luzTimer = setInterval(t, 1000);
-    try { if ('wakeLock' in navigator) wake = await navigator.wakeLock.request('screen'); } catch {}
+    telaAcesa(true);
     if (SB) { SB.setBackgroundColor({ color: '#000000' }).catch(() => {}); SB.setStyle({ style: 'DARK' }).catch(() => {}); }
   } else {
-    try { if (wake) await wake.release(); } catch {} wake = null;
+    telaAcesa(false);
     tema();
   }
 }
@@ -453,7 +527,9 @@ $('#luzBrilho').addEventListener('change', salvar);
 const APP = plugin('App');
 if (APP) APP.addListener('backButton', () => {
   if (!$('#luz').hidden) return luz(false);
+  if (!$('#passo').hidden) return passo(false);
   if (!$('#modal').hidden) return fecharModal();
+  if (V.tab === 'guia' && V.guia) { V.guia = null; return render(); }
   if (V.tab !== 'inicio') return ir('inicio');
   APP.minimizeApp();
 });
@@ -462,9 +538,9 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) { escondidoEm = Date.now(); return; }
   if ($('#luz').hidden && $('#modal').hidden) render();
   procurarAtualizacao();
-  if (!$('#luz').hidden && !wake && 'wakeLock' in navigator) navigator.wakeLock.request('screen').then(w => wake = w).catch(() => {});
+  if ((!$('#luz').hidden || !$('#passo').hidden) && !wake && 'wakeLock' in navigator) navigator.wakeLock.request('screen').then(w => wake = w).catch(() => {});
 });
-setInterval(() => { if ($('#modal').hidden && $('#luz').hidden && !document.activeElement.matches('input,textarea,select')) render(); }, 60e3);
+setInterval(() => { if ($('#modal').hidden && $('#luz').hidden && $('#passo').hidden && !document.activeElement.matches('input,textarea,select')) render(); }, 60e3);
 
 N.iniciar().then(reagendarTudo);
 if (!NATIVO && 'serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
