@@ -14,7 +14,7 @@ let LEU_OK = true;
 function carregar() { try { return JSON.parse(localStorage.getItem(LS)) || {}; } catch { LEU_OK = false; return {}; } }
 const S = carregar();
 S.cfg = Object.assign({ pai: 'Bruno', mae: 'Maíra', bebe: 'Maya', nasc: '', tema: 'auto', luz: 45 }, S.cfg || {});
-for (const k of ['ped', 'est', 'compras', 'diario']) S[k] = Array.isArray(S[k]) ? S[k] : [];
+for (const k of ['ped', 'est', 'compras', 'diario', 'rot']) S[k] = Array.isArray(S[k]) ? S[k] : [];
 S.nid = S.nid || 100;
 S.lidos = S.lidos && typeof S.lidos === 'object' ? S.lidos : {};
 const cfg = S.cfg;
@@ -32,6 +32,9 @@ const dataHora = t => (mesmoDia(t, Date.now()) ? 'Hoje' : mesmoDia(t, Date.now()
 const inicioDia = (t = Date.now()) => { const d = new Date(t); d.setHours(0, 0, 0, 0); return +d; };
 const paraInput = t => { const d = new Date(t); return d.getFullYear() + '-' + pad(d.getMonth() + 1) + '-' + pad(d.getDate()) + 'T' + hora(t); };
 const deInput = v => { const t = v ? +new Date(v) : NaN; return isNaN(t) ? Date.now() : t; };
+const crono = ms => { ms = Math.max(0, ms); const t = Math.floor(ms / 1000), h = Math.floor(t / 3600); return (h ? h + ':' + pad(Math.floor(t / 60) % 60) : Math.floor(t / 60)) + ':' + pad(t % 60); };
+const dur = ms => { const m = Math.round(ms / MIN); if (m < 1) return '<1 min'; if (m < 60) return m + ' min'; return Math.floor(m / 60) + 'h' + (m % 60 ? ' ' + pad(m % 60) : ''); };
+const rel = t => Date.now() - t < MIN ? 'agora' : 'há ' + dur(Date.now() - t);
 const DIAS = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
 const MESES = ['janeiro', 'fevereiro', 'março', 'abril', 'maio', 'junho', 'julho', 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro'];
 const plural = (n, s, p) => n + ' ' + (n === 1 ? s : p);
@@ -193,6 +196,7 @@ function telaInicio() {
   } else {
     h += `<div class="capa"><div class="deco">${ic('baby')}</div><div class="rotulo">Pai a caminho</div><div class="grande">A ${esc(cfg.bebe)} está chegando</div><div class="sub">Quando ela nascer, é só avisar aqui.</div><button class="btn" data-a="nasceu">${ic('heart')} A ${esc(cfg.bebe)} nasceu!</button></div>`;
   }
+  h += cardRotinaResumo();
   const prox = proximoGuia(), lidosN = G.filter(g => S.lidos[g.id]).length;
   h += `<div class="sec-titulo"><h3>Guia do Pai</h3><button class="btn sec mini" data-a="ir" data-t="guia">Ver tudo (${lidosN}/${G.length})</button></div>`;
   if (prox) h += itemGuia(prox);
@@ -265,6 +269,77 @@ function telaDiario() {
 }
 
 
+/* ---------------- Rotina da Maya ---------------- */
+const rotOrd = () => S.rot.slice().sort((a, b) => b.ini - a.ini);
+const rodando = tipo => S.rot.find(r => r.tipo === tipo && !r.fim);
+const ultimoDe = tipo => rotOrd().find(r => r.tipo === tipo);
+const LADO = { E: 'peito esquerdo', D: 'peito direito', M: 'mamadeira' };
+const FR = { xixi: 'Xixi 💧', coco: 'Cocô 💩', ambos: 'Xixi e cocô 💧💩' };
+function tituloRot(r) {
+  if (r.tipo === 'mam') return 'Mamada · ' + (LADO[r.lado] || 'peito') + (r.lado === 'M' && r.ml ? ' · ' + r.ml + ' ml' : '');
+  if (r.tipo === 'sono') return 'Sono';
+  if (r.tipo === 'fr') return 'Fralda · ' + (FR[r.fr] || 'fralda');
+  return 'Banho';
+}
+const iconeRot = r => ({ mam: '🍼', sono: '😴', fr: '🧷', banho: '🛁' }[r.tipo]);
+const durRot = r => (r.tipo === 'mam' && r.lado === 'M') || r.tipo === 'fr' || r.tipo === 'banho' ? 0 : (r.fim || Date.now()) - r.ini;
+function resumoDia(t0 = inicioDia()) {
+  const l = S.rot.filter(r => r.ini >= t0 && r.ini < t0 + DIA);
+  const mam = l.filter(r => r.tipo === 'mam');
+  return {
+    mam: mam.length, peitoMs: mam.filter(r => r.lado !== 'M').reduce((a, r) => a + durRot(r), 0), ml: mam.filter(r => r.lado === 'M').reduce((a, r) => a + (+r.ml || 0), 0),
+    sonoMs: l.filter(r => r.tipo === 'sono').reduce((a, r) => a + durRot(r), 0),
+    xixi: l.filter(r => r.tipo === 'fr' && r.fr !== 'coco').length, coco: l.filter(r => r.tipo === 'fr' && r.fr !== 'xixi').length,
+    banho: l.filter(r => r.tipo === 'banho').length, lista: l,
+  };
+}
+function blocoAtivos() {
+  let x = '';
+  const m = rodando('mam'), z = rodando('sono');
+  if (m) x += `<div class="card ativo"><div class="rotulo">Mamando agora · ${LADO[m.lado]}</div><div class="grande num" data-desde="${m.ini}">${crono(Date.now() - m.ini)}</div><div class="linha" style="margin-top:12px;flex-wrap:wrap"><button class="btn verde" data-a="rotParar" data-id="${m.id}">Terminar</button>${m.lado !== 'M' ? `<button class="btn sec" data-a="mamTrocar" data-id="${m.id}">Trocar de lado</button>` : ''}</div></div>`;
+  if (z) x += `<div class="card ativo"><div class="rotulo">Dormindo desde ${hora(z.ini)}</div><div class="grande num" data-desde="${z.ini}">${crono(Date.now() - z.ini)}</div><div class="linha" style="margin-top:12px"><button class="btn verde" data-a="rotParar" data-id="${z.id}">Acordou</button></div></div>`;
+  return x;
+}
+function linhaRot(r) {
+  const d = durRot(r);
+  return `<div class="item"><i class="bolha b-pri" style="font-size:1.3rem">${iconeRot(r)}</i><div class="txt"><b>${esc(tituloRot(r))}</b><br><small>${dataHora(r.ini)}${d ? ' · ' + (r.fim ? dur(d) : 'em andamento') : ''}${r.obs ? ' · ' + esc(r.obs) : ''}</small></div><button class="btn sec mini" data-a="rotEditar" data-id="${r.id}" aria-label="Editar">${ic('pencil')}</button></div>`;
+}
+function cardRotinaResumo() {
+  const r = resumoDia(), u = ultimoDe('mam');
+  return `<div class="sec-titulo"><h3>Rotina da ${esc(cfg.bebe)}</h3><button class="btn sec mini" data-a="ir" data-t="rotina">Abrir</button></div>${blocoAtivos()}
+  <div class="card"><div class="grade3"><div class="stat"><b>${u ? '<span data-rel="' + u.ini + '">' + rel(u.ini) + '</span>' : '–'}</b><small>última mamada</small></div><div class="stat"><b>${r.xixi}💧 ${r.coco}💩</b><small>fraldas hoje</small></div><div class="stat"><b>${r.sonoMs ? dur(r.sonoMs) : '–'}</b><small>sono hoje</small></div></div></div>`;
+}
+function telaRotina() {
+  const r = resumoDia(), m = rodando('mam'), z = rodando('sono');
+  const ult = t => { const u = ultimoDe(t); return u ? rel(u.ini) : 'ainda não registrado'; };
+  let h = `<h2>Rotina da ${esc(cfg.bebe)}</h2>` + blocoAtivos();
+  h += `<div class="grade">
+    <button class="acao" data-a="${m ? 'rotParar' : 'mamAbrir'}" data-id="${m ? m.id : ''}" style="margin:0;flex-direction:column;align-items:flex-start"><i class="bolha b-ouro" style="font-size:1.4rem">🍼</i><span>${m ? 'Terminar mamada' : 'Mamada'}<small data-rel-txt="mam">${ult('mam')}</small></span></button>
+    <button class="acao" data-a="${z ? 'rotParar' : 'sonoIni'}" data-id="${z ? z.id : ''}" style="margin:0;flex-direction:column;align-items:flex-start"><i class="bolha b-pri" style="font-size:1.4rem">😴</i><span>${z ? 'Acordou' : 'Dormiu'}<small>${ult('sono')}</small></span></button>
+    <button class="acao" data-a="frAbrir" style="margin:0;flex-direction:column;align-items:flex-start"><i class="bolha b-verde" style="font-size:1.4rem">🧷</i><span>Fralda<small>${ult('fr')}</small></span></button>
+    <button class="acao" data-a="banhoReg" style="margin:0;flex-direction:column;align-items:flex-start"><i class="bolha b-pri" style="font-size:1.4rem">🛁</i><span>Banho<small>${ult('banho')}</small></span></button>
+  </div>`;
+  h += `<div class="sec-titulo"><h3>Hoje</h3></div><div class="card"><div class="grade3"><div class="stat"><b>${r.mam}</b><small>mamadas</small></div><div class="stat"><b>${r.xixi}💧 ${r.coco}💩</b><small>fraldas</small></div><div class="stat"><b>${r.sonoMs ? dur(r.sonoMs) : '–'}</b><small>sono</small></div></div>
+    <p class="mute" style="margin:12px 0 0;font-size:.88rem">${r.peitoMs ? 'No peito: ' + dur(r.peitoMs) + '. ' : ''}${r.ml ? 'Mamadeira: ' + r.ml + ' ml. ' : ''}${r.banho ? 'Banho: ' + r.banho + '. ' : ''}A partir do 5º dia, o esperado são 6 ou mais fraldas com xixi por dia.</p></div>`;
+  const l = rotOrd().filter(x => x.ini >= inicioDia() - DIA);
+  h += `<div class="sec-titulo"><h3>Hoje e ontem</h3></div><div class="card">${l.length ? l.map(linhaRot).join('') : '<div class="vazio">Nada registrado ainda. Toque num botão acima.</div>'}</div>`;
+  h += `<button class="btn sec bloco" data-a="rotEnviar">${ic('share-2')} Enviar resumo do dia (WhatsApp, pediatra)</button>`;
+  return h;
+}
+function modalRot(r) {
+  const tp = r.tipo, ts = r.ini;
+  const lado = tp === 'mam' ? `<label>Tipo</label><select id="rLado">${Object.entries(LADO).map(([k, n]) => `<option value="${k}" ${r.lado === k ? 'selected' : ''}>${n}</option>`).join('')}</select><label>Mililitros (só mamadeira)</label><input id="rMl" type="number" inputmode="numeric" min="0" value="${r.ml || ''}">` : '';
+  const fr = tp === 'fr' ? `<label>O que foi</label><select id="rFr">${Object.entries(FR).map(([k, n]) => `<option value="${k}" ${r.fr === k ? 'selected' : ''}>${n}</option>`).join('')}</select>` : '';
+  const durc = (tp === 'mam' && r.lado !== 'M') || tp === 'sono' ? (r.fim ? `<label>Duração (minutos)</label><input id="rDur" type="number" inputmode="numeric" min="0" value="${Math.round((r.fim - r.ini) / MIN)}">` : `<p class="mute">Em andamento. Termine pelo botão na tela.</p>`) : '';
+  modal(`<h2>${iconeRot(r)} ${esc(tituloRot(r))}</h2>${lado}${fr}<label>Início</label><input id="rIni" type="datetime-local" value="${paraInput(ts)}">${durc}<label>Observação (opcional)</label><input id="rObs" maxlength="80" value="${esc(r.obs || '')}">
+  <div class="linha" style="margin-top:18px"><button class="btn bloco" data-a="rotSalvar" data-id="${r.id}">Salvar</button><button class="btn perigo" data-a="rotExcluir" data-id="${r.id}" aria-label="Excluir">${ic('trash-2')}</button></div>`);
+}
+function textoDia() {
+  const r = resumoDia();
+  const l = r.lista.slice().sort((a, b) => a.ini - b.ini).map(x => `${hora(x.ini)} ${tituloRot(x)}${durRot(x) ? ' (' + dur(durRot(x)) + ')' : ''}${x.obs ? ' - ' + x.obs : ''}`);
+  return `Rotina da ${cfg.bebe} - ${data(Date.now())}\nMamadas: ${r.mam}${r.peitoMs ? ' (peito ' + dur(r.peitoMs) + ')' : ''}${r.ml ? ', mamadeira ' + r.ml + ' ml' : ''}\nFraldas: ${r.xixi} com xixi, ${r.coco} com cocô\nSono: ${r.sonoMs ? dur(r.sonoMs) : '-'}\nBanhos: ${r.banho}\n\n` + l.join('\n');
+}
+
 /* ---------------- Guia do Pai ---------------- */
 const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const guiaPorId = id => G.find(g => g.id === id);
@@ -334,7 +409,7 @@ function render() {
   $('#subtitulo').textContent = `${DIAS[d.getDay()]}, ${d.getDate()} de ${MESES[d.getMonth()]}`;
   $$('#nav button').forEach(b => b.classList.toggle('ativo', b.dataset.tab === V.tab));
   const sy = window.scrollY;
-  $('#view').innerHTML = { inicio: telaInicio, guia: telaGuia, pedidos: telaPedidos, estoque: telaEstoque, diario: telaDiario, mais: telaMais }[V.tab]();
+  $('#view').innerHTML = { inicio: telaInicio, guia: telaGuia, rotina: telaRotina, pedidos: telaPedidos, estoque: telaEstoque, diario: telaDiario, mais: telaMais }[V.tab]();
   window.scrollTo(0, sy);
   carregarFotos();
   if (V.tab === 'mais') N.status().then(s => { const el = $('#notifStatus'); if (el) el.textContent = s === 'granted' ? '✅ Ativadas' : '⚠️ Não ativadas: toque em Permitir'; });
@@ -387,6 +462,34 @@ async function compartilhar(titulo, texto) {
 const PRESETS = [['Fraldas', 'un', 20], ['Lenços umedecidos', 'pacotes', 1], ['Pomada de assadura', 'un', 1], ['Algodão', 'pacotes', 1], ['Cotonetes', 'caixas', 1], ['Sabonete líquido', 'un', 1]];
 
 const ACOES = {
+  /* rotina */
+  mamAbrir: () => {
+    const u = rotOrd().find(r => r.tipo === 'mam' && r.lado !== 'M'); const prox = u ? (u.lado === 'E' ? 'D' : 'E') : null;
+    modal(`<h2>🍼 Mamada</h2>${prox ? `<p class="mute">A última no peito foi no ${u.lado === 'E' ? 'esquerdo' : 'direito'}. Comece pelo ${prox === 'E' ? 'esquerdo' : 'direito'}.</p>` : ''}
+    <button class="btn bloco" style="margin-top:8px" data-a="mamIni" data-l="E">Peito esquerdo${prox === 'E' ? ' (sugerido)' : ''}</button>
+    <button class="btn bloco" style="margin-top:10px" data-a="mamIni" data-l="D">Peito direito${prox === 'D' ? ' (sugerido)' : ''}</button>
+    <h3 style="margin-top:18px">Mamadeira</h3><div class="addlinha"><input id="mMl" type="number" inputmode="numeric" min="0" placeholder="ml (opcional)"><button class="btn" data-a="mamMl">Registrar</button></div>`, true);
+  },
+  mamIni: el => { S.rot.push({ id: uid(), tipo: 'mam', ini: Date.now(), fim: null, lado: el.dataset.l }); salvar(); fecharModal(); render(); vibrar(); },
+  mamMl: () => { const ml = Math.max(0, +$('#mMl').value || 0), t = Date.now(); S.rot.push({ id: uid(), tipo: 'mam', ini: t, fim: t, lado: 'M', ml: ml || undefined }); salvar(); fecharModal(); render(); toast('Mamadeira registrada'); },
+  mamTrocar: el => { const r = byId(S.rot, el.dataset.id); if (!r) return; const t = Date.now(); r.fim = t; S.rot.push({ id: uid(), tipo: 'mam', ini: t, fim: null, lado: r.lado === 'E' ? 'D' : 'E' }); salvar(); render(); vibrar(); },
+  sonoIni: () => { S.rot.push({ id: uid(), tipo: 'sono', ini: Date.now(), fim: null }); salvar(); render(); vibrar(); },
+  rotParar: el => { const r = byId(S.rot, el.dataset.id); if (!r) return; r.fim = Date.now(); salvar(); render(); toast(tituloRot(r).split(' · ')[0] + ': ' + dur(r.fim - r.ini)); },
+  frAbrir: () => modal(`<h2>🧷 Fralda</h2><div class="grade"><button class="btn" data-a="frReg" data-t="xixi">Xixi 💧</button><button class="btn" data-a="frReg" data-t="coco">Cocô 💩</button></div><button class="btn bloco" style="margin-top:12px" data-a="frReg" data-t="ambos">Xixi e cocô 💧💩</button>`, true),
+  frReg: el => { S.rot.push({ id: uid(), tipo: 'fr', ini: Date.now(), fim: Date.now(), fr: el.dataset.t }); salvar(); fecharModal(); render(); vibrar(); toast('Fralda registrada'); },
+  banhoReg: () => { S.rot.push({ id: uid(), tipo: 'banho', ini: Date.now(), fim: Date.now() }); salvar(); render(); toast('Banho registrado 🛁'); },
+  rotEditar: el => { const r = byId(S.rot, el.dataset.id); if (r) modalRot(r); },
+  rotSalvar: el => {
+    const r = byId(S.rot, el.dataset.id); if (!r) return;
+    const ini = deInput($('#rIni').value), era = r.fim ? r.fim - r.ini : 0;
+    r.ini = ini; r.obs = $('#rObs').value.trim() || undefined;
+    if ($('#rLado')) { r.lado = $('#rLado').value; r.ml = r.lado === 'M' ? (+$('#rMl').value || undefined) : undefined; }
+    if ($('#rFr')) r.fr = $('#rFr').value;
+    if ($('#rDur')) r.fim = ini + Math.max(0, +$('#rDur').value || 0) * MIN; else if (r.fim) r.fim = ini + era;
+    salvar(); fecharModal(); render();
+  },
+  rotExcluir: el => { S.rot = S.rot.filter(r => r.id !== el.dataset.id); salvar(); fecharModal(); render(); },
+  rotEnviar: () => compartilhar('Rotina da ' + cfg.bebe, textoDia()),
   ir: el => ir(el.dataset.t),
   guiaAbrir: el => { V.tab = 'guia'; V.guia = el.dataset.id; window.scrollTo(0, 0); render(); },
   guiaVoltar: () => { V.guia = null; render(); },
@@ -457,13 +560,13 @@ const ACOES = {
   /* mais */
   tema: el => { cfg.tema = el.dataset.t; salvar(); render(); },
   notifPedir: async () => { const ok = await N.pedir(); toast(ok ? 'Notificações ativadas ✅' : 'Permissão negada. Ative nas configurações do Android.', 4000); render(); },
-  backup: () => compartilhar('Backup Maya', JSON.stringify({ app: 'pai-da-maya', quando: Date.now(), cfg: S.cfg, ped: S.ped, est: S.est, compras: S.compras, diario: S.diario.map(e => ({ ...e, foto: false })) })),
+  backup: () => compartilhar('Backup Maya', JSON.stringify({ app: 'pai-da-maya', quando: Date.now(), cfg: S.cfg, ped: S.ped, est: S.est, compras: S.compras, diario: S.diario.map(e => ({ ...e, foto: false })), rot: S.rot })),
   restaurar: () => modal(`<h2>Restaurar backup</h2><p class="mute">Cole o texto do backup. Isso substitui o que está no app agora.</p><textarea id="rTxt" placeholder="Cole aqui"></textarea><button class="btn perigo bloco" style="margin-top:14px" data-a="restaurarOk">Restaurar</button>`),
   restaurarOk: () => {
     try {
       const b = JSON.parse($('#rTxt').value.trim());
       if (b.app !== 'pai-da-maya') throw new Error('não é um backup deste app');
-      Object.assign(S.cfg, b.cfg || {}); S.ped = b.ped || []; S.est = b.est || []; S.compras = b.compras || []; S.diario = b.diario || [];
+      Object.assign(S.cfg, b.cfg || {}); S.ped = b.ped || []; S.est = b.est || []; S.compras = b.compras || []; S.diario = b.diario || []; S.rot = b.rot || [];
       salvar(); fecharModal(); reagendarTudo(); render(); toast('Backup restaurado ✅');
     } catch (e) { toast('Backup inválido: ' + (e.message || '').slice(0, 80), 4000); }
   },
@@ -522,6 +625,13 @@ async function luz(abrir) {
 $('#luzSair').addEventListener('click', () => luz(false));
 $('#luzBrilho').addEventListener('input', e => { cfg.luz = +e.target.value; luzBrilho(); });
 $('#luzBrilho').addEventListener('change', salvar);
+
+/* ---------------- Relógio da tela ---------------- */
+setInterval(() => {
+  const now = Date.now();
+  $$('[data-desde]').forEach(el => el.textContent = crono(now - +el.dataset.desde));
+  $$('[data-rel]').forEach(el => el.textContent = rel(+el.dataset.rel));
+}, 1000);
 
 /* ---------------- Ciclo de vida ---------------- */
 const APP = plugin('App');

@@ -194,7 +194,7 @@ window.GUIAS = [
       'É normal perder um pouco de peso nos primeiros dias e voltar ao peso do nascimento em cerca de 2 semanas.',
     ],
     a: ['Fralda seca por muito tempo, xixi escuro, muita sonolência ou pele amarela forte: ligue para o pediatra no mesmo dia.'],
-    d: 'Anote os xixis e cocôs nos primeiros dias no Diário. O pediatra vai perguntar.',
+    d: 'Registre xixis, cocôs e mamadas na aba Rotina nos primeiros dias. O pediatra vai perguntar.',
     f: 'Ministério da Saúde',
   },
   {
