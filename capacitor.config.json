@@ -1,0 +1,21 @@
+{
+  "appId": "br.com.bruno.paidamaya",
+  "appName": "Pai da Maya",
+  "webDir": "www",
+  "android": {
+    "backgroundColor": "#0f1b24"
+  },
+  "plugins": {
+    "LocalNotifications": {
+      "smallIcon": "ic_stat_icon",
+      "iconColor": "#e0a84a"
+    },
+    "CapacitorUpdater": {
+      "autoUpdate": false,
+      "statsUrl": "",
+      "updateUrl": "",
+      "channelUrl": "",
+      "resetWhenUpdate": true
+    }
+  }
+}

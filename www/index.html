@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="theme-color" content="#0f1b24">
+<title>Pai da Maya</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icons/icon-192.png">
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<header id="topo">
+  <div>
+    <div id="saudacao">Olá</div>
+    <div id="subtitulo"></div>
+  </div>
+  <button id="btnTema" class="icone" aria-label="Trocar tema claro/escuro"></button>
+</header>
+<main id="view"></main>
+<nav id="nav">
+  <button data-tab="inicio" data-ic="house">Início</button>
+  <button data-tab="pedidos" data-ic="clipboard-list">Pedidos</button>
+  <button data-tab="estoque" data-ic="package">Estoque</button>
+  <button data-tab="diario" data-ic="notebook-pen">Diário</button>
+  <button data-tab="mais" data-ic="layout-grid">Mais</button>
+</nav>
+<div id="modal" hidden><div id="modalBox"></div></div>
+<div id="toast" hidden></div>
+<div id="luz" hidden>
+  <div id="luzHora" class="luz-hora">00:00</div>
+  <div class="luz-sub">Luz vermelha, não acorda ninguém</div>
+  <label class="luz-brilho">Brilho<input id="luzBrilho" type="range" min="8" max="100" value="45"></label>
+  <button id="luzSair" class="luz-sair">Sair</button>
+</div>
+<script src="versao.js"></script>
+<script src="icones.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
