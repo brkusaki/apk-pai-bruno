@@ -431,7 +431,7 @@ function telaMais() {
   <div class="card"><h3>Assistente de voz 🎤</h3><label>Nome do assistente (você diz “Olá ${esc(nomeIA())}”)</label><input id="cfgIA" maxlength="14" value="${esc(nomeIA())}">
     <div class="linha entre" style="margin-top:14px"><span>Falar as respostas</span><input type="checkbox" id="cfgVoz" ${cfg.voz !== false ? 'checked' : ''}></div>
     <div class="linha entre" style="margin-top:10px"><span>Ouvir sempre (experimental)<br><small class="mute">Só com o app aberto e a tela ligada</small></span><input type="checkbox" id="cfgSempre" ${cfg.sempre ? 'checked' : ''}></div>
-    <button class="btn sec bloco" style="margin-top:14px" data-a="vozAbrirAc">🎤 Abrir assistente</button></div>
+    <button class="btn sec bloco" style="margin-top:14px" data-a="vozAbrirAc">🎤 Abrir assistente</button><button class="btn sec bloco" style="margin-top:10px" data-a="vozTeste">🔧 Testar voz e microfone</button></div>
   <div class="card"><h3>Notificações</h3><div class="linha entre"><span id="notifStatus" class="mute">verificando...</span><button class="btn sec mini" data-a="notifPedir">Permitir</button></div></div>
   <div class="card"><h3>Dados</h3><p class="mute">Tudo fica só neste celular. Se trocar de aparelho, leve um backup (as fotos não vão no backup).</p>
     <div class="chips"><button class="btn sec mini" data-a="backup">${ic('download')} Backup</button><button class="btn sec mini" data-a="restaurar">Restaurar</button><button class="btn sec mini" data-a="exportarDiario">${ic('share-2')} Enviar diário</button></div></div>
@@ -641,6 +641,7 @@ const ACOES = {
   cartasEnviar: () => compartilhar('Cartinhas para a ' + cfg.bebe, cartasOrd().map(textoCarta).join('\n\n-----\n\n')),
   /* plantão / assistente */
   rotDesfazer: () => { const u = rotOrd()[0]; if (!u) return toast('Nada para desfazer'); S.rot = S.rot.filter(x => x.id !== u.id); salvar(); render(); toast('Desfeito: ' + semEmoji(tituloRot(u))); },
+  vozTeste: () => diagVoz(),
   vozChip: el => comando(el.dataset.t),
   vozAbrirAc: () => vozAbrir(true, false),
 };
@@ -755,7 +756,10 @@ function modalCarta(c, para) {
 const textoCarta = c => `💌 ${paraNome(c.para)} (${data(c.ts)})\n\nQuerida ${cfg.bebe},\n\n${c.t}\n\nCom amor, ${cfg.pai === 'Bruno' ? 'seu pai' : cfg.pai}`;
 
 /* ---------------- Assistente de voz ---------------- */
-const SR = plugin('SpeechRecognition'), TTS = plugin('TextToSpeech');
+const temPlug = n => { try { return !NATIVO || !!CAP.isPluginAvailable(n); } catch { return false; } };
+const SR = NATIVO && temPlug('SpeechRecognition') ? plugin('SpeechRecognition') : null, TTS = NATIVO && temPlug('TextToSpeech') ? plugin('TextToSpeech') : null;
+const erroTxt = e => String((e && (e.message || e.errorMessage || e.code)) || e || '').slice(0, 140);
+const SEM_APK = 'Falta o microfone nesta versão do app. Instale o APK novo (aba Releases no GitHub) por cima do atual.';
 const nomeIA = () => (cfg.assistente || 'Bento').trim() || 'Bento';
 const A = { log: [], pend: null, pendAte: 0, ocupado: false, falando: false, loop: false, erro: '', web: null, lembretes: {} };
 const esperar = ms => new Promise(r => setTimeout(r, ms));
@@ -835,16 +839,16 @@ async function falar(txt) {
   dizer('ia', txt);
   if (cfg.voz === false) return;
   const f = semEmoji(txt); if (!f) return;
-  A.falando = true; await pararEscuta();
+  A.falando = true; await pararEscuta(); A.erroTTS = '';
+  const web = () => new Promise(res => { try { const u = new SpeechSynthesisUtterance(f); u.lang = 'pt-BR'; u.onend = u.onerror = res; speechSynthesis.cancel(); speechSynthesis.speak(u); setTimeout(res, 3000 + f.length * 90); } catch { res(); } });
   try {
     if (TTS) await TTS.speak({ text: f, lang: 'pt-BR', rate: 1.0, pitch: 1.0, volume: 1.0, category: 'ambient' });
-    else if ('speechSynthesis' in window) await new Promise(res => { const u = new SpeechSynthesisUtterance(f); u.lang = 'pt-BR'; u.onend = u.onerror = res; speechSynthesis.cancel(); speechSynthesis.speak(u); setTimeout(res, 30000); });
-  } catch (e) {
-    try { if ('speechSynthesis' in window) await new Promise(res => { const u = new SpeechSynthesisUtterance(f); u.lang = 'pt-BR'; u.onend = u.onerror = res; speechSynthesis.speak(u); setTimeout(res, 30000); }); } catch {}
-  }
+    else if ('speechSynthesis' in window) await web();
+  } catch (e) { A.erroTTS = erroTxt(e); if ('speechSynthesis' in window) await web(); }
   A.falando = false;
 }
 async function calar() { try { if (TTS) await TTS.stop(); } catch {} try { 'speechSynthesis' in window && speechSynthesis.cancel(); } catch {} A.falando = false; }
+async function pararTudo() { await calar(); await pararEscuta(); A.ouvindo = false; A.ocupado = false; estado(''); toast('Parei de falar e de ouvir'); }
 async function pararEscuta() { try { if (SR) await SR.stop(); } catch {} try { A.web && A.web.abort(); } catch {} }
 async function garantirMic() {
   if (!SR) return true;
@@ -855,19 +859,20 @@ async function garantirMic() {
     if (p.speechRecognition !== 'granted') p = await SR.requestPermissions();
     if (p.speechRecognition !== 'granted') { A.erro = 'Preciso da permissão do microfone. Ative em Configurações do Android › Apps › Maya › Permissões.'; return false; }
     return true;
-  } catch (e) { A.erro = 'Não consegui acessar o microfone.'; return false; }
+  } catch (e) { A.erro = 'Não consegui acessar o microfone: ' + erroTxt(e); return false; }
 }
 /* escuta uma frase e devolve o texto ('' se não ouviu) */
 async function ouvirUma() {
-  A.erro = '';
+  A.erro = ''; A.ultErro = '';
+  if (NATIVO && !SR) { A.erro = SEM_APK; A.fatal = true; return ''; }
   if (SR) {
     if (!(await garantirMic())) { A.fatal = true; return ''; }
     try { await SR.stop(); } catch {}
     try {
-      const r = await SR.start({ language: 'pt-BR', maxResults: 3, partialResults: false, popup: false });
+      const r = await Promise.race([SR.start({ language: 'pt-BR', maxResults: 3, partialResults: false, popup: false }), esperar(15000).then(() => { throw new Error('tempo esgotado'); })]);
       A.fatal = false; A.falhas = 0;
       return ((r && r.matches && r.matches[0]) || '').trim();
-    } catch (e) { A.ultErro = String((e && e.message) || e || ''); A.falhas = (A.falhas || 0) + 1; return ''; }
+    } catch (e) { A.ultErro = erroTxt(e); A.falhas = (A.falhas || 0) + 1; try { await SR.stop(); } catch {} return ''; }
   }
   const W = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!W) { A.erro = 'Este navegador não tem reconhecimento de voz. Use o campo de texto.'; A.fatal = true; return ''; }
@@ -889,7 +894,7 @@ function dizer(quem, txt) {
 }
 function estado(txt) {
   A.estado = txt || '';
-  const e = $('#vozEstado'); if (e) e.textContent = A.estado || (cfg.sempre ? `Aguardando “Olá ${nomeIA()}”` : 'Toque no microfone e fale');
+  const e = $('#vozEstado'); if (e) e.textContent = A.estado || ((cfg.sempre ? `Aguardando “Olá ${nomeIA()}”` : 'Toque no microfone e fale') + (A.ouvi ? ` · ouvi: ${A.ouvi}` : ''));
   $('#vozMic').classList.toggle('on', !!A.ouvindo);
   $('#micFab').classList.toggle('on', !!cfg.sempre);
   const lm = $('#luzMic'); if (lm) lm.classList.toggle('on', !!A.ouvindo);
@@ -907,16 +912,17 @@ function vozAbrir(abrir, ouvir) {
     $('#vozNome').textContent = '🎤 ' + nomeIA();
     $('#vozChips').innerHTML = EXEMPLOS.map(x => `<button class="chip" data-a="vozChip" data-t="${esc(x)}">${esc(x)}</button>`).join('');
     $('#vozOpt').innerHTML = `<label class="sw"><input type="checkbox" id="vozFalar" ${cfg.voz !== false ? 'checked' : ''}> Falar as respostas</label><label class="sw"><input type="checkbox" id="vozSempre" ${cfg.sempre ? 'checked' : ''}> Ouvir sempre “Olá ${esc(nomeIA())}” (experimental)</label>`;
+    if (!A.loop && !A.falando && A.ocupado && !A.ouvindoDesde) { A.ocupado = false; A.ouvindo = false; }
     pintarVoz(); estado(A.estado);
     if (ouvir) escutarComando();
-  } else { calar(); if (A.ouvindo) pararEscuta(); }
+  } else { calar(); if (A.ouvindo || A.ocupado) { pararEscuta(); if (!A.loop) { A.ouvindo = false; A.ocupado = false; } } estado(''); }
 }
 async function escutarComando() {
   if (A.ocupado) { calar(); await pararEscuta(); return; }
   A.ocupado = true; A.ouvindo = true; await calar(); estado('Ouvindo…');
   try {
     let t = await ouvirUma();
-    if (!t) { A.ouvindo = false; estado(''); await falar(A.erro || 'Não ouvi nada. Toque no microfone e fale de novo.'); return; }
+    if (!t) { A.ouvindo = false; estado(''); await falar(A.erro || 'Não ouvi nada' + (A.ultErro ? ' (' + A.ultErro + ')' : '') + '. Toque no microfone e fale de novo.'); return; }
     const w = acordou(t); if (w) t = w.resto;
     if (!t) { A.ouvindo = false; await falar('Olá, como posso ajudar?'); A.ouvindo = true; estado('Ouvindo…'); t = await ouvirUma(); }
     A.ouvindo = false; estado('');
@@ -935,6 +941,7 @@ async function loopSempre() {
       if (A.falando || A.ocupado) { await esperar(400); continue; }
       estado('');
       const t = await ouvirUma();
+      A.ouvi = t ? '“' + t.slice(0, 40) + '”' : (A.ultErro ? '(' + A.ultErro + ')' : ''); estado('');
       if (A.fatal) { cfg.sempre = false; salvar(); await falar(A.erro || 'Não consegui ouvir. Desliguei o modo “ouvir sempre”.'); break; }
       if (!t) { if ((A.falhas || 0) > 6) { cfg.sempre = false; salvar(); await falar('O reconhecimento de voz está falhando neste celular. Desliguei o modo ouvir sempre. ' + (A.ultErro || '')); break; } await esperar(A.falhas > 2 ? 3000 : 300); continue; }
       const w = acordou(t); if (!w || A.ocupado) continue;
@@ -946,6 +953,20 @@ async function loopSempre() {
       } finally { A.ocupado = false; A.ouvindo = false; estado(''); }
     }
   } finally { A.loop = false; estado(''); render(); telaAcesa(!!cfg.sempre); if (!cfg.sempre) telaAcesa(false); }
+}
+async function diagVoz() {
+  const l = [];
+  l.push('App nativo: ' + (NATIVO ? 'sim' : 'não (navegador)'));
+  l.push('Plugin de microfone: ' + (SR ? 'ok' : NATIVO ? 'AUSENTE → instale o APK novo' : 'n/a'));
+  l.push('Plugin de voz (fala): ' + (TTS ? 'ok' : NATIVO ? 'AUSENTE → instale o APK novo' : 'n/a'));
+  if (SR) { try { l.push('Reconhecimento disponível: ' + (await SR.available()).available); l.push('Permissão do microfone: ' + (await SR.checkPermissions()).speechRecognition); } catch (e) { l.push('Erro no microfone: ' + erroTxt(e)); } }
+  dizer('ia', l.join('\n'));
+  if (NATIVO && !SR) return;
+  const cv = cfg.voz; cfg.voz = true; await falar('Teste de voz. Se você ouviu isso, a fala está funcionando.'); cfg.voz = cv;
+  dizer('ia', A.erroTTS ? 'Fala com erro: ' + A.erroTTS : 'Fala: sem erro (se não saiu som, veja o volume de mídia do celular).');
+  dizer('ia', 'Agora diga algo, por exemplo “olá” (15 segundos)...');
+  A.ouvindo = true; estado('Ouvindo…'); const t = await ouvirUma(); A.ouvindo = false; estado('');
+  dizer('ia', t ? 'Entendi: “' + t + '”' : 'Não ouvi nada. ' + (A.erro || A.ultErro || 'Sem erro registrado.'));
 }
 async function ligarSempre(on) {
   cfg.sempre = !!on; salvar();
@@ -1200,7 +1221,8 @@ $('#luzBrilho').addEventListener('change', salvar);
 $('#micFab').addEventListener('click', () => vozAbrir(true, true));
 $('#vozX').addEventListener('click', () => vozAbrir(false));
 $('#vozMic').addEventListener('click', () => escutarComando());
-$('#vozParar').addEventListener('click', () => { calar(); pararEscuta(); });
+$('#vozParar').addEventListener('click', () => pararTudo());
+$('#vozTeste').addEventListener('click', () => diagVoz());
 $('#vozForm').addEventListener('submit', e => { e.preventDefault(); const i = $('#vozTxt'), v = i.value.trim(); if (!v) return; i.value = ''; const w = acordou(v); comando(w && w.resto ? w.resto : v); });
 $('#vozOpt').addEventListener('change', e => {
   if (e.target.id === 'vozFalar') { cfg.voz = e.target.checked; salvar(); if (!cfg.voz) calar(); }

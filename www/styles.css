@@ -194,7 +194,7 @@ input[type=search]{-webkit-appearance:none}
 #voz{position:fixed;inset:0;z-index:50;background:var(--bg);display:flex;flex-direction:column;gap:10px;padding:calc(14px + env(safe-area-inset-top)) 16px calc(14px + env(safe-area-inset-bottom))}
 .voz-topo{display:flex;justify-content:space-between;align-items:center;font-size:1.2rem}
 #vozLog{flex:1;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:6px 2px;min-height:80px}
-.bal{max-width:88%;padding:10px 14px;border-radius:18px;font-weight:600;line-height:1.35}
+.bal{white-space:pre-line;max-width:88%;padding:10px 14px;border-radius:18px;font-weight:600;line-height:1.35}
 .bal.eu{align-self:flex-end;background:var(--grad);color:#fff;border-bottom-right-radius:6px}
 .bal.ia{align-self:flex-start;background:var(--card);border:1px solid var(--line);border-bottom-left-radius:6px}
 #vozChips{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px}#vozChips .chip{white-space:nowrap;flex:none}
