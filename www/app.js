@@ -763,6 +763,8 @@ const SEM_APK = 'Falta o microfone nesta versão do app. Instale o APK novo (aba
 const nomeIA = () => (cfg.assistente || 'Bento').trim() || 'Bento';
 const A = { log: [], pend: null, pendAte: 0, ocupado: false, falando: false, loop: false, erro: '', web: null, lembretes: {} };
 const esperar = ms => new Promise(r => setTimeout(r, ms));
+/* chamadas nativas podem nunca responder: sempre com prazo */
+const nat = (p, ms = 4000) => Promise.race([Promise.resolve(p), esperar(ms).then(() => { throw new Error('sem resposta do Android (' + ms / 1000 + 's)'); })]);
 const lev = (a, b) => {
   const d = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
   for (let j = 1; j <= b.length; j++) d[0][j] = j;
@@ -843,22 +845,22 @@ async function falar(txt) {
   const web = () => new Promise(res => { try { const u = new SpeechSynthesisUtterance(f); u.lang = 'pt-BR'; u.onend = u.onerror = res; speechSynthesis.cancel(); speechSynthesis.speak(u); setTimeout(res, 3000 + f.length * 90); } catch { res(); } });
   try {
     if (TTS) {
-      const t0 = Date.now(); await TTS.speak({ text: f, lang: 'pt-BR', rate: 1.0, pitch: 1.0, volume: 1.0, category: 'ambient' });
+      const t0 = Date.now(); await nat(TTS.speak({ text: f, lang: 'pt-BR', rate: 1.0, pitch: 1.0, volume: 1.0, category: 'ambient' }), 5000 + f.length * 120);
       if (Date.now() - t0 < 300 + f.length * 15) { A.erroTTS = 'terminou rápido demais (sem som?)'; if ('speechSynthesis' in window) await web(); }
     } else if ('speechSynthesis' in window) await web();
   } catch (e) { A.erroTTS = erroTxt(e); if ('speechSynthesis' in window) await web(); }
   A.falando = false;
 }
-async function calar() { try { if (TTS) await TTS.stop(); } catch {} try { 'speechSynthesis' in window && speechSynthesis.cancel(); } catch {} A.falando = false; }
+async function calar() { try { if (TTS) await nat(TTS.stop(), 1500); } catch {} try { 'speechSynthesis' in window && speechSynthesis.cancel(); } catch {} A.falando = false; }
 async function pararTudo() { await calar(); await pararEscuta(); A.ouvindo = false; A.ocupado = false; estado(''); toast('Parei de falar e de ouvir'); }
-async function pararEscuta() { try { if (SR) await SR.stop(); } catch {} try { A.web && A.web.abort(); } catch {} }
+async function pararEscuta() { try { if (SR) await nat(SR.stop(), 1500); } catch {} try { A.web && A.web.abort(); } catch {} }
 async function garantirMic() {
   if (!SR) return true;
   try {
-    const av = await SR.available();
+    const av = await nat(SR.available(), 5000);
     if (!av.available) { A.erro = 'Este celular não tem reconhecimento de voz disponível. Use o campo de texto.'; return false; }
-    let p = await SR.checkPermissions();
-    if (p.speechRecognition !== 'granted') p = await SR.requestPermissions();
+    let p = await nat(SR.checkPermissions(), 5000);
+    if (p.speechRecognition !== 'granted') p = await nat(SR.requestPermissions(), 60000);
     if (p.speechRecognition !== 'granted') { A.erro = 'Preciso da permissão do microfone. Ative em Configurações do Android › Apps › Maya › Permissões.'; return false; }
     return true;
   } catch (e) { A.erro = 'Não consegui acessar o microfone: ' + erroTxt(e); return false; }
@@ -869,12 +871,12 @@ async function ouvirUma() {
   if (NATIVO && !SR) { A.erro = SEM_APK; A.fatal = true; return ''; }
   if (SR) {
     if (!(await garantirMic())) { A.fatal = true; return ''; }
-    try { await SR.stop(); } catch {}
+    try { await nat(SR.stop(), 1500); } catch {}
     try {
       const r = await Promise.race([SR.start({ language: 'pt-BR', maxResults: 3, partialResults: false, popup: false }), esperar(15000).then(() => { throw new Error('tempo esgotado'); })]);
       A.fatal = false; A.falhas = 0;
       return ((r && r.matches && r.matches[0]) || '').trim();
-    } catch (e) { A.ultErro = erroTxt(e); A.falhas = (A.falhas || 0) + 1; try { await SR.stop(); } catch {} return ''; }
+    } catch (e) { A.ultErro = erroTxt(e); A.falhas = (A.falhas || 0) + 1; nat(SR.stop(), 1500).catch(() => {}); return ''; }
   }
   const W = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!W) { A.erro = 'Este navegador não tem reconhecimento de voz. Use o campo de texto.'; A.fatal = true; return ''; }
@@ -920,7 +922,7 @@ function vozAbrir(abrir, ouvir) {
   } else { calar(); if (A.ouvindo || A.ocupado) { pararEscuta(); if (!A.loop) { A.ouvindo = false; A.ocupado = false; } } estado(''); }
 }
 async function escutarComando() {
-  if (A.ocupado) { calar(); await pararEscuta(); return; }
+  if (A.ocupado) { calar(); pararEscuta(); if (!A.loop) { A.ocupado = false; A.ouvindo = false; } estado(''); return; }
   A.ocupado = true; A.ouvindo = true; await calar(); estado('Ouvindo…');
   try {
     let t = await ouvirUma();
@@ -957,27 +959,27 @@ async function loopSempre() {
   } finally { A.loop = false; estado(''); render(); telaAcesa(!!cfg.sempre); if (!cfg.sempre) telaAcesa(false); }
 }
 async function diagVoz() {
-  if (A.diag) return; A.diag = true;
-  const sem = cfg.sempre; A.ocupado = true; await pararEscuta(); await calar(); await esperar(700);
+  /* se um teste anterior travou, este toque o destrava */
+  A.diag = true; A.ocupado = true; A.ouvindo = false; A.falando = false; estado('Testando…');
+  const eu = A.diagId = (A.diagId || 0) + 1, p = m => dizer('ia', m);
   try {
-    const l = [];
-    l.push('App nativo: ' + (NATIVO ? 'sim' : 'não (navegador)'));
-    l.push('Plugin de microfone: ' + (SR ? 'ok' : NATIVO ? 'AUSENTE → instale o APK novo' : 'n/a'));
-    l.push('Plugin de voz (fala): ' + (TTS ? 'ok' : NATIVO ? 'AUSENTE → instale o APK novo' : 'n/a'));
-    if (SR) { try { l.push('Reconhecimento disponível: ' + (await SR.available()).available); l.push('Permissão do microfone: ' + (await SR.checkPermissions()).speechRecognition); } catch (e) { l.push('Erro no microfone: ' + erroTxt(e)); } }
-    if (TTS) {
-      try { l.push('Fala em pt-BR suportada: ' + (await TTS.isLanguageSupported({ lang: 'pt-BR' })).supported); } catch (e) { l.push('Idioma da fala: erro ' + erroTxt(e)); }
-      try { const v = (await TTS.getSupportedVoices()).voices || []; l.push('Vozes: ' + v.length + ' no total, ' + v.filter(x => /pt/i.test(x.lang || '')).length + ' em português'); } catch (e) { l.push('Vozes: erro ' + erroTxt(e)); }
-    }
-    dizer('ia', l.join('\n'));
+    p('Teste iniciado. App nativo: ' + (NATIVO ? 'sim' : 'não') + ' · microfone: ' + (SR ? 'ok' : 'AUSENTE (instale o APK novo)') + ' · fala: ' + (TTS ? 'ok' : 'AUSENTE (instale o APK novo)'));
     if (NATIVO && !SR) return;
+    p('1/4 Parando qualquer escuta em andamento...'); await pararEscuta(); await calar();
+    if (SR) { try { p('2/4 Microfone: disponível=' + (await nat(SR.available(), 5000)).available + ', permissão=' + (await nat(SR.checkPermissions(), 5000)).speechRecognition); } catch (e) { p('2/4 Erro no microfone: ' + erroTxt(e)); } }
+    if (TTS) {
+      try { p('3/4 Fala em português suportada: ' + (await nat(TTS.isLanguageSupported({ lang: 'pt-BR' }), 5000)).supported); } catch (e) { p('3/4 Idioma da fala: ' + erroTxt(e)); }
+      try { const v = (await nat(TTS.getSupportedVoices(), 5000)).voices || []; p('Vozes instaladas: ' + v.length + ' (em português: ' + v.filter(x => /pt/i.test(x.lang || '')).length + ')'); } catch (e) { p('Vozes: ' + erroTxt(e)); }
+    }
     const cv = cfg.voz; cfg.voz = true; A.erroTTS = ''; const t0 = Date.now();
+    p('4/4 Falando agora... (volume de MÍDIA alto)');
     await falar('Teste de voz. Se você ouviu isso, a fala está funcionando.'); cfg.voz = cv;
-    dizer('ia', (A.erroTTS ? 'Fala com problema: ' + A.erroTTS : 'Fala: sem erro') + ` (durou ${Math.round((Date.now() - t0) / 100) / 10}s). Se não saiu som, aumente o volume de MÍDIA do celular.`);
-    dizer('ia', 'Agora diga “olá” (15 segundos)...');
+    p((A.erroTTS ? 'Fala com problema: ' + A.erroTTS : 'Fala sem erro') + ` (durou ${Math.round((Date.now() - t0) / 100) / 10}s)`);
+    p('Agora diga “olá” (até 15 segundos)...');
     A.ouvindo = true; estado('Ouvindo…'); const t = await ouvirUma(); A.ouvindo = false; estado('');
-    dizer('ia', t ? 'Entendi: “' + t + '”' : 'Não ouvi nada. ' + (A.erro || A.ultErro || 'Sem erro registrado.'));
-  } finally { A.ouvindo = false; A.ocupado = false; A.diag = false; estado(''); }
+    p(t ? 'Entendi: “' + t + '”' : 'Não ouvi nada. ' + (A.erro || A.ultErro || 'Sem erro registrado.'));
+  } catch (e) { p('Erro no teste: ' + erroTxt(e)); }
+  finally { A.ouvindo = false; A.ocupado = false; A.diag = false; estado(''); }
 }
 async function ligarSempre(on) {
   cfg.sempre = !!on; salvar();
