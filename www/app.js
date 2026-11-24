@@ -842,8 +842,10 @@ async function falar(txt) {
   A.falando = true; await pararEscuta(); A.erroTTS = '';
   const web = () => new Promise(res => { try { const u = new SpeechSynthesisUtterance(f); u.lang = 'pt-BR'; u.onend = u.onerror = res; speechSynthesis.cancel(); speechSynthesis.speak(u); setTimeout(res, 3000 + f.length * 90); } catch { res(); } });
   try {
-    if (TTS) await TTS.speak({ text: f, lang: 'pt-BR', rate: 1.0, pitch: 1.0, volume: 1.0, category: 'ambient' });
-    else if ('speechSynthesis' in window) await web();
+    if (TTS) {
+      const t0 = Date.now(); await TTS.speak({ text: f, lang: 'pt-BR', rate: 1.0, pitch: 1.0, volume: 1.0, category: 'ambient' });
+      if (Date.now() - t0 < 300 + f.length * 15) { A.erroTTS = 'terminou rápido demais (sem som?)'; if ('speechSynthesis' in window) await web(); }
+    } else if ('speechSynthesis' in window) await web();
   } catch (e) { A.erroTTS = erroTxt(e); if ('speechSynthesis' in window) await web(); }
   A.falando = false;
 }
@@ -955,18 +957,27 @@ async function loopSempre() {
   } finally { A.loop = false; estado(''); render(); telaAcesa(!!cfg.sempre); if (!cfg.sempre) telaAcesa(false); }
 }
 async function diagVoz() {
-  const l = [];
-  l.push('App nativo: ' + (NATIVO ? 'sim' : 'não (navegador)'));
-  l.push('Plugin de microfone: ' + (SR ? 'ok' : NATIVO ? 'AUSENTE → instale o APK novo' : 'n/a'));
-  l.push('Plugin de voz (fala): ' + (TTS ? 'ok' : NATIVO ? 'AUSENTE → instale o APK novo' : 'n/a'));
-  if (SR) { try { l.push('Reconhecimento disponível: ' + (await SR.available()).available); l.push('Permissão do microfone: ' + (await SR.checkPermissions()).speechRecognition); } catch (e) { l.push('Erro no microfone: ' + erroTxt(e)); } }
-  dizer('ia', l.join('\n'));
-  if (NATIVO && !SR) return;
-  const cv = cfg.voz; cfg.voz = true; await falar('Teste de voz. Se você ouviu isso, a fala está funcionando.'); cfg.voz = cv;
-  dizer('ia', A.erroTTS ? 'Fala com erro: ' + A.erroTTS : 'Fala: sem erro (se não saiu som, veja o volume de mídia do celular).');
-  dizer('ia', 'Agora diga algo, por exemplo “olá” (15 segundos)...');
-  A.ouvindo = true; estado('Ouvindo…'); const t = await ouvirUma(); A.ouvindo = false; estado('');
-  dizer('ia', t ? 'Entendi: “' + t + '”' : 'Não ouvi nada. ' + (A.erro || A.ultErro || 'Sem erro registrado.'));
+  if (A.diag) return; A.diag = true;
+  const sem = cfg.sempre; A.ocupado = true; await pararEscuta(); await calar(); await esperar(700);
+  try {
+    const l = [];
+    l.push('App nativo: ' + (NATIVO ? 'sim' : 'não (navegador)'));
+    l.push('Plugin de microfone: ' + (SR ? 'ok' : NATIVO ? 'AUSENTE → instale o APK novo' : 'n/a'));
+    l.push('Plugin de voz (fala): ' + (TTS ? 'ok' : NATIVO ? 'AUSENTE → instale o APK novo' : 'n/a'));
+    if (SR) { try { l.push('Reconhecimento disponível: ' + (await SR.available()).available); l.push('Permissão do microfone: ' + (await SR.checkPermissions()).speechRecognition); } catch (e) { l.push('Erro no microfone: ' + erroTxt(e)); } }
+    if (TTS) {
+      try { l.push('Fala em pt-BR suportada: ' + (await TTS.isLanguageSupported({ lang: 'pt-BR' })).supported); } catch (e) { l.push('Idioma da fala: erro ' + erroTxt(e)); }
+      try { const v = (await TTS.getSupportedVoices()).voices || []; l.push('Vozes: ' + v.length + ' no total, ' + v.filter(x => /pt/i.test(x.lang || '')).length + ' em português'); } catch (e) { l.push('Vozes: erro ' + erroTxt(e)); }
+    }
+    dizer('ia', l.join('\n'));
+    if (NATIVO && !SR) return;
+    const cv = cfg.voz; cfg.voz = true; A.erroTTS = ''; const t0 = Date.now();
+    await falar('Teste de voz. Se você ouviu isso, a fala está funcionando.'); cfg.voz = cv;
+    dizer('ia', (A.erroTTS ? 'Fala com problema: ' + A.erroTTS : 'Fala: sem erro') + ` (durou ${Math.round((Date.now() - t0) / 100) / 10}s). Se não saiu som, aumente o volume de MÍDIA do celular.`);
+    dizer('ia', 'Agora diga “olá” (15 segundos)...');
+    A.ouvindo = true; estado('Ouvindo…'); const t = await ouvirUma(); A.ouvindo = false; estado('');
+    dizer('ia', t ? 'Entendi: “' + t + '”' : 'Não ouvi nada. ' + (A.erro || A.ultErro || 'Sem erro registrado.'));
+  } finally { A.ouvindo = false; A.ocupado = false; A.diag = false; estado(''); }
 }
 async function ligarSempre(on) {
   cfg.sempre = !!on; salvar();
