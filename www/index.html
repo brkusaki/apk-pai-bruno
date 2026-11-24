@@ -36,9 +36,23 @@
 <div id="toast" hidden></div>
 <div id="luz" hidden>
   <div id="luzHora" class="luz-hora">00:00</div>
-  <div class="luz-sub">Luz vermelha, não acorda ninguém</div>
-  <label class="luz-brilho">Brilho<input id="luzBrilho" type="range" min="8" max="100" value="45"></label>
-  <button id="luzSair" class="luz-sair">Sair</button>
+  <div class="luz-sub">Modo plantão · luz vermelha</div>
+  <div id="luzPainel"></div>
+  <div id="luzFala" class="luz-fala"></div>
+  <div class="luz-fim">
+    <label class="luz-brilho">Brilho<input id="luzBrilho" type="range" min="8" max="100" value="45"></label>
+    <div class="luz-bts"><button id="luzMic" class="luz-sair" aria-label="Falar com o assistente">🎤 Falar</button><button id="luzSair" class="luz-sair">Sair</button></div>
+  </div>
+</div>
+<button id="micFab" aria-label="Assistente de voz">🎤</button>
+<div id="voz" hidden>
+  <div class="voz-topo"><b id="vozNome">🎤 Assistente</b><button id="vozX" class="icone" aria-label="Fechar">✕</button></div>
+  <div id="vozLog"></div>
+  <div id="vozChips" class="chips"></div>
+  <div id="vozEstado" class="voz-estado"></div>
+  <div class="voz-ctl"><button id="vozMic" class="voz-mic" aria-label="Falar">🎤</button><button id="vozParar" class="btn sec mini">Calar</button></div>
+  <form id="vozForm" class="addlinha"><input id="vozTxt" placeholder="Ou digite um comando" autocomplete="off"><button class="btn">Enviar</button></form>
+  <div id="vozOpt"></div>
 </div>
 <script src="versao.js"></script>
 <script src="icones.js"></script>
@@ -48,6 +62,7 @@
 <script src="data4.js"></script>
 <script src="data5.js"></script>
 <script src="data6.js"></script>
+<script src="data7.js"></script>
 <script src="app.js"></script>
 </body>
 </html>
