@@ -837,8 +837,8 @@ function reg(o) { S.rot.push(Object.assign({ id: uid() }, o)); salvar(); render(
 
 /* ----- fala e escuta ----- */
 const semEmoji = s => String(s).replace(/[\u{1F000}-\u{1FFFF}\u{2190}-\u{27BF}\u{FE0F}★]/gu, '').replace(/\s+/g, ' ').trim();
-async function falar(txt) {
-  dizer('ia', txt);
+async function falar(txt, log = true) {
+  if (log) dizer('ia', txt);
   if (cfg.voz === false) return;
   const f = semEmoji(txt); if (!f) return;
   A.falando = true; await pararEscuta(); A.erroTTS = '';
@@ -849,11 +849,11 @@ async function falar(txt) {
       if (Date.now() - t0 < 300 + f.length * 15) { A.erroTTS = 'terminou rápido demais (sem som?)'; if ('speechSynthesis' in window) await web(); }
     } else if ('speechSynthesis' in window) await web();
   } catch (e) { A.erroTTS = erroTxt(e); if ('speechSynthesis' in window) await web(); }
-  A.falando = false;
+  await esperar(400); A.falando = false;
 }
 async function calar() { try { if (TTS) await nat(TTS.stop(), 1500); } catch {} try { 'speechSynthesis' in window && speechSynthesis.cancel(); } catch {} A.falando = false; }
 async function pararTudo() { await calar(); await pararEscuta(); A.ouvindo = false; A.ocupado = false; estado(''); toast('Parei de falar e de ouvir'); }
-async function pararEscuta() { try { if (SR) await nat(SR.stop(), 1500); } catch {} try { A.web && A.web.abort(); } catch {} }
+async function pararEscuta() { try { if (SR && A.srAtivo) await nat(SR.stop(), 1500); } catch {} try { A.web && A.web.abort(); } catch {} }
 async function garantirMic() {
   if (!SR) return true;
   try {
@@ -870,13 +870,16 @@ async function ouvirUma() {
   A.erro = ''; A.ultErro = '';
   if (NATIVO && !SR) { A.erro = SEM_APK; A.fatal = true; return ''; }
   if (SR) {
-    if (!(await garantirMic())) { A.fatal = true; return ''; }
-    try { await nat(SR.stop(), 1500); } catch {}
+    if (!A.micOk || Date.now() - A.micOk > 120e3) { if (!(await garantirMic())) { A.fatal = true; return ''; } A.micOk = Date.now(); }
+    if (A.srAtivo) { await pararEscuta(); await esperar(250); }
+    if (!A.srOuve) { A.srOuve = true; try { SR.addListener('listeningState', e => { if (e && e.status === 'started') { vibrar(40); if (A.ouvindo) estado('Pode falar…'); } }); } catch {} }
+    const tok = A.srAtivo = Date.now();
     try {
       const r = await Promise.race([SR.start({ language: 'pt-BR', maxResults: 3, partialResults: false, popup: false }), esperar(15000).then(() => { throw new Error('tempo esgotado'); })]);
       A.fatal = false; A.falhas = 0;
       return ((r && r.matches && r.matches[0]) || '').trim();
-    } catch (e) { A.ultErro = erroTxt(e); A.falhas = (A.falhas || 0) + 1; nat(SR.stop(), 1500).catch(() => {}); return ''; }
+    } catch (e) { A.ultErro = erroTxt(e); A.falhas = (A.falhas || 0) + 1; if (/tempo esgotado/.test(A.ultErro)) nat(SR.stop(), 1500).catch(() => {}); return ''; }
+    finally { if (A.srAtivo === tok) A.srAtivo = 0; }
   }
   const W = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!W) { A.erro = 'Este navegador não tem reconhecimento de voz. Use o campo de texto.'; A.fatal = true; return ''; }
@@ -923,10 +926,10 @@ function vozAbrir(abrir, ouvir) {
 }
 async function escutarComando() {
   if (A.ocupado) { calar(); pararEscuta(); if (!A.loop) { A.ocupado = false; A.ouvindo = false; } estado(''); return; }
-  A.ocupado = true; A.ouvindo = true; await calar(); estado('Ouvindo…');
+  A.ocupado = true; A.ouvindo = true; if (A.falando) await calar(); estado('Ouvindo…');
   try {
     let t = await ouvirUma();
-    if (!t) { A.ouvindo = false; estado(''); await falar(A.erro || 'Não ouvi nada' + (A.ultErro ? ' (' + A.ultErro + ')' : '') + '. Toque no microfone e fale de novo.'); return; }
+    if (!t) { A.ouvindo = false; estado(''); if (A.erro) await falar(A.erro); else { dizer('ia', 'Não ouvi nada' + (A.ultErro ? ' (' + A.ultErro + ')' : '') + '. Toque no microfone e fale logo depois da vibração.'); await falar('Não ouvi. Toque e fale logo em seguida.', false); } return; }
     const w = acordou(t); if (w) t = w.resto;
     if (!t) { A.ouvindo = false; await falar('Olá, como posso ajudar?'); A.ouvindo = true; estado('Ouvindo…'); t = await ouvirUma(); }
     A.ouvindo = false; estado('');
