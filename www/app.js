@@ -17,6 +17,7 @@ S.cfg = Object.assign({ pai: 'Bruno', mae: 'Maíra', bebe: 'Maya', nasc: '', tem
 for (const k of ['ped', 'est', 'compras', 'diario', 'rot']) S[k] = Array.isArray(S[k]) ? S[k] : [];
 S.nid = S.nid || 100;
 S.lidos = S.lidos && typeof S.lidos === 'object' ? S.lidos : {};
+S.fav = S.fav && typeof S.fav === 'object' ? S.fav : {};
 const cfg = S.cfg;
 const salvar = () => { if (!LEU_OK) return; try { localStorage.setItem(LS, JSON.stringify(S)); } catch { toast('Sem espaço para salvar!'); } };
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
@@ -347,29 +348,41 @@ const proximoGuia = () => G.find(g => !S.lidos[g.id]);
 function itemGuia(g) {
   return `<button class="acao" data-a="guiaAbrir" data-id="${g.id}"><i class="bolha ${g.cat === 'sos' ? 'b-alerta' : 'b-pri'}" style="font-size:1.4rem">${g.e}</i><span style="flex:1;min-width:0">${esc(g.t)}<small>${esc(g.r)}</small></span>${S.lidos[g.id] ? '<span class="tag verde">lido</span>' : ''}</button>`;
 }
-function listaGuias() {
+function guiasVisiveis() {
   const q = norm(V.q);
-  const l = G.filter(g => (V.cat === 'todos' || g.cat === V.cat) && (!q || norm([g.t, g.r, ...g.p].join(' ')).includes(q)));
+  return G.filter(g => (V.cat === 'todos' || (V.cat === 'fav' ? S.fav[g.id] : g.cat === V.cat)) && (!q || norm([g.t, g.r, ...g.p].join(' ')).includes(q)));
+}
+function listaGuias() {
+  const l = guiasVisiveis();
+  if (!l.length && V.cat === 'fav') return '<div class="card vazio">Toque na ⭐ dentro de um guia para guardar aqui os que você mais usa.</div>';
   return l.length ? l.map(itemGuia).join('') : '<div class="card vazio">Nada encontrado. Tente outra palavra.</div>';
 }
 function detalheGuia(g) {
   if (!g) { V.guia = null; return telaGuia(); }
   const cat = (CATS.find(c => c[0] === g.cat) || [0, ''])[1];
-  return `<button class="btn sec mini" data-a="guiaVoltar">← Guia</button>
+  let ord = guiasVisiveis(); if (!ord.some(x => x.id === g.id)) ord = G;
+  const pos = ord.findIndex(x => x.id === g.id), ant = ord[pos - 1], prox = ord[pos + 1];
+  const nav = `<div class="card"><button class="btn bloco" data-a="guiaProx" data-id="${g.id}" data-n="${prox ? prox.id : ''}">${S.lidos[g.id] ? '' : '✅ '}${S.lidos[g.id] ? 'Próximo guia' : 'Li tudo, ir para o próximo'}${prox ? '' : ' (fim da lista)'}</button>
+    ${prox ? `<p class="mute" style="margin:8px 0 0;font-size:.88rem;text-align:center">A seguir: ${prox.e} ${esc(prox.t)}</p>` : ''}
+    <div class="linha" style="margin-top:12px"><button class="btn sec" style="flex:1" data-a="guiaAbrir" data-id="${ant ? ant.id : g.id}" ${ant ? '' : 'disabled'}>← Anterior</button><button class="btn sec" style="flex:1" data-a="guiaAbrir" data-id="${prox ? prox.id : g.id}" ${prox ? '' : 'disabled'}>Próximo →</button></div>
+    <p class="mute" style="margin:10px 0 0;font-size:.8rem;text-align:center">Guia ${pos + 1} de ${ord.length}</p></div>`;
+  return `<div class="linha" style="justify-content:space-between"><button class="btn sec mini" data-a="guiaVoltar">← Guia</button><button class="btn sec mini" data-a="guiaFav" data-id="${g.id}" aria-label="Favorito">${S.fav[g.id] ? '⭐ Favorito' : '☆ Favoritar'}</button></div>
   <div class="card" style="margin-top:12px"><div class="rotulo">${esc(cat)}</div>
     <h2 style="margin-top:6px">${g.e} ${esc(g.t)}</h2><p class="mute">${esc(g.r)}</p>
-    <ol class="passos ${g.lista ? 'lista' : ''}">${g.p.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
+    <ol class="passos ${g.lista ? 'bolinhas' : ''}">${g.p.map(x => `<li>${esc(x)}</li>`).join('')}</ol>
     <div class="linha" style="margin-top:14px;flex-wrap:wrap"><button class="btn" data-a="passoAbrir" data-id="${g.id}">Um passo por vez</button><button class="btn sec" data-a="guiaLido" data-id="${g.id}">${S.lidos[g.id] ? '✅ Lido' : 'Marcar como lido'}</button></div></div>
   ${g.a && g.a.length ? `<div class="card alerta"><h3>⚠️ Atenção</h3>${g.a.map(x => `<p>${esc(x)}</p>`).join('')}</div>` : ''}
   ${g.d ? `<div class="card" style="border-color:var(--ouro);background:var(--ouro-s)"><h3>💡 Dica de pai</h3><p style="margin:0">${esc(g.d)}</p></div>` : ''}
-  <p class="mute" style="font-size:.8rem;text-align:center">Fonte: ${esc(g.f || 'Boas práticas')}. Não substitui o pediatra.</p>`;
+  <p class="mute" style="font-size:.8rem;text-align:center">Fonte: ${esc(g.f || 'Boas práticas')}. Não substitui o pediatra.</p>
+  ${nav}`;
 }
 function telaGuia() {
   if (V.guia) return detalheGuia(guiaPorId(V.guia));
   const lidos = G.filter(g => S.lidos[g.id]).length;
   return `<h2>Guia do Pai</h2><p class="mute">Passo a passo para quem está começando. Você leu ${lidos} de ${G.length}. Guia de apoio: não substitui o pediatra.</p>
+  <div class="barra"><i style="width:${Math.round(lidos / G.length * 100)}%"></i></div>
   <input id="gq" type="search" placeholder="Buscar: banho, febre, cólica..." value="${esc(V.q)}" autocomplete="off">
-  <div class="abas" style="margin-top:10px">${[['todos', 'Todos'], ...CATS].map(([k, n]) => `<button class="${V.cat === k ? 'on' : ''}" data-a="guiaCat" data-t="${k}">${n}</button>`).join('')}</div>
+  <div class="abas" style="margin-top:10px">${[['todos', 'Todos'], ['fav', '⭐ Favoritos'], ...CATS].map(([k, n]) => `<button class="${V.cat === k ? 'on' : ''}" data-a="guiaCat" data-t="${k}">${n}</button>`).join('')}</div>
   <div id="guiaLista">${listaGuias()}</div>`;
 }
 const PS = { g: null, i: 0 };
@@ -389,7 +402,7 @@ $('#passoX').addEventListener('click', () => passo(false));
 $('#passoA').addEventListener('click', () => { if (PS.i > 0) { PS.i--; passoRender(); } });
 $('#passoP').addEventListener('click', () => {
   if (PS.i < PS.g.p.length - 1) { PS.i++; passoRender(); return; }
-  S.lidos[PS.g.id] = S.lidos[PS.g.id] || Date.now(); salvar(); passo(false); render(); toast('Guia concluído ✅');
+  S.lidos[PS.g.id] = S.lidos[PS.g.id] || Date.now(); salvar(); passo(false); render(); toast('Guia concluído ✅ Veja o próximo logo abaixo');
 });
 
 function telaMais() {
@@ -494,6 +507,8 @@ const ACOES = {
   guiaAbrir: el => { V.tab = 'guia'; V.guia = el.dataset.id; window.scrollTo(0, 0); render(); },
   guiaVoltar: () => { V.guia = null; render(); },
   guiaCat: el => { V.cat = el.dataset.t; render(); },
+  guiaFav: el => { const id = el.dataset.id; if (S.fav[id]) delete S.fav[id]; else S.fav[id] = 1; salvar(); render(); },
+  guiaProx: el => { const id = el.dataset.id; S.lidos[id] = S.lidos[id] || Date.now(); salvar(); const n = el.dataset.n; if (n) { V.guia = n; window.scrollTo(0, 0); render(); toast('Guia marcado como lido ✅'); } else { V.guia = null; render(); toast('Você chegou ao fim da lista 🎉'); } },
   guiaLido: el => { const id = el.dataset.id; if (S.lidos[id]) delete S.lidos[id]; else S.lidos[id] = Date.now(); salvar(); render(); },
   passoAbrir: el => passo(true, guiaPorId(el.dataset.id)),
   nasceu: () => modal(`<h2>A ${esc(cfg.bebe)} nasceu! 💙</h2><label>Data e hora do nascimento</label><input id="nNasc" type="datetime-local" value="${paraInput(cfg.nasc ? +new Date(cfg.nasc) : Date.now())}"><button class="btn bloco" style="margin-top:18px" data-a="nasceuOk">Salvar</button>${cfg.nasc ? '<button class="btn sec bloco" style="margin-top:10px" data-a="nasceuLimpar">Remover data</button>' : ''}`, true),
@@ -560,13 +575,13 @@ const ACOES = {
   /* mais */
   tema: el => { cfg.tema = el.dataset.t; salvar(); render(); },
   notifPedir: async () => { const ok = await N.pedir(); toast(ok ? 'Notificações ativadas ✅' : 'Permissão negada. Ative nas configurações do Android.', 4000); render(); },
-  backup: () => compartilhar('Backup Maya', JSON.stringify({ app: 'pai-da-maya', quando: Date.now(), cfg: S.cfg, ped: S.ped, est: S.est, compras: S.compras, diario: S.diario.map(e => ({ ...e, foto: false })), rot: S.rot })),
+  backup: () => compartilhar('Backup Maya', JSON.stringify({ app: 'pai-da-maya', quando: Date.now(), cfg: S.cfg, ped: S.ped, est: S.est, compras: S.compras, diario: S.diario.map(e => ({ ...e, foto: false })), rot: S.rot, lidos: S.lidos, fav: S.fav })),
   restaurar: () => modal(`<h2>Restaurar backup</h2><p class="mute">Cole o texto do backup. Isso substitui o que está no app agora.</p><textarea id="rTxt" placeholder="Cole aqui"></textarea><button class="btn perigo bloco" style="margin-top:14px" data-a="restaurarOk">Restaurar</button>`),
   restaurarOk: () => {
     try {
       const b = JSON.parse($('#rTxt').value.trim());
       if (b.app !== 'pai-da-maya') throw new Error('não é um backup deste app');
-      Object.assign(S.cfg, b.cfg || {}); S.ped = b.ped || []; S.est = b.est || []; S.compras = b.compras || []; S.diario = b.diario || []; S.rot = b.rot || [];
+      Object.assign(S.cfg, b.cfg || {}); S.ped = b.ped || []; S.est = b.est || []; S.compras = b.compras || []; S.diario = b.diario || []; S.rot = b.rot || []; S.lidos = b.lidos || S.lidos; S.fav = b.fav || {};
       salvar(); fecharModal(); reagendarTudo(); render(); toast('Backup restaurado ✅');
     } catch (e) { toast('Backup inválido: ' + (e.message || '').slice(0, 80), 4000); }
   },
