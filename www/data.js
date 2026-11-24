@@ -1,8 +1,10 @@
 /* Conteúdo do Guia do Pai. Baseado em orientações da Sociedade Brasileira de Pediatria (SBP),
    do Ministério da Saúde e da Academia Americana de Pediatria. Não substitui o pediatra. */
 window.CATS = [
-  ['sos', '🚨 Urgência'], ['dia', '🧷 Dia a dia'], ['comer', '🍼 Alimentação'], ['sono', '😴 Sono'],
-  ['choro', '😭 Choro'], ['saude', '🩺 Saúde'], ['maira', '💛 Cuidar da Maíra'], ['pai', '💙 Você, pai'],
+  ['sos', '🚨 Urgência'], ['pre', '🤰 Antes do parto'], ['parto', '🏥 Maternidade'], ['dia', '🧷 Dia a dia'],
+  ['comer', '🍼 Amamentação'], ['alim', '🥣 Comidinha'], ['sono', '😴 Sono'], ['choro', '😭 Choro'],
+  ['saude', '🩺 Saúde'], ['seg', '🛡️ Segurança'], ['cresc', '🌱 Desenvolvimento'], ['brincar', '🧸 Brincar'],
+  ['maira', '💛 Cuidar da Maíra'], ['pai', '💙 Você, pai'],
 ];
 // lista:true = itens soltos (•). Sem lista = passo a passo numerado.
 window.GUIAS = [

@@ -6,7 +6,8 @@ const LS = 'pai:v1';
 const MIN = 60e3, H = 60 * MIN, DIA = 24 * H;
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
-const G = window.GUIAS || [], CATS = window.CATS || [];
+const G = window.GUIAS || [], CATS = window.CATS || [], FASES = window.FASES || [];
+G.sort((a, b) => CATS.findIndex(c => c[0] === a.cat) - CATS.findIndex(c => c[0] === b.cat));
 const ic = (n, cls = '') => `<svg class="i ${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${(window.ICONES || {})[n] || ''}</svg>`;
 
 /* ---------------- Dados ---------------- */
@@ -176,7 +177,7 @@ function tema() {
 }
 
 /* ---------------- Telas ---------------- */
-const V = { tab: 'inicio', est: 'itens', guia: null, cat: 'todos', q: '' };
+const V = { tab: 'inicio', est: 'itens', guia: null, cat: 'todos', fase: '', q: '' };
 const baixos = () => S.est.filter(i => i.qtd != null && i.qtd <= i.min);
 const abertos = () => S.ped.filter(p => !p.feito).sort((a, b) => b.criado - a.criado);
 const diarioOrd = () => S.diario.slice().sort((a, b) => b.ts - a.ts);
@@ -199,7 +200,7 @@ function telaInicio() {
   }
   h += cardRotinaResumo();
   const prox = proximoGuia(), lidosN = G.filter(g => S.lidos[g.id]).length;
-  h += `<div class="sec-titulo"><h3>Guia do Pai</h3><button class="btn sec mini" data-a="ir" data-t="guia">Ver tudo (${lidosN}/${G.length})</button></div>`;
+  h += `<div class="sec-titulo"><h3>Guia do Pai</h3><button class="btn sec mini" data-a="ir" data-t="guia">Ver tudo (${lidosN}/${G.length})</button></div><p class="mute" style="margin:-4px 0 8px">Para esta fase: ${esc(nomeFase(faseAtual()))}</p>`;
   if (prox) h += itemGuia(prox);
   h += `<div class="grade"><button class="acao" data-a="guiaAbrir" data-id="sos-bebe" style="margin:0"><i class="bolha b-alerta" style="font-size:1.3rem">🚨</i><span>Alerta da Maya</span></button><a class="acao" href="tel:192" style="margin:0"><i class="bolha b-alerta" style="font-size:1.3rem">🚑</i><span>SAMU 192</span></a></div>`;
   h += `<button class="acao" data-a="luzAbrir"><i class="bolha b-alerta">${ic('moon')}</i><span>Modo noturno<small>Tela vermelha e escura para a madrugada</small></span></button>`;
@@ -344,13 +345,21 @@ function textoDia() {
 /* ---------------- Guia do Pai ---------------- */
 const norm = s => String(s || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 const guiaPorId = id => G.find(g => g.id === id);
-const proximoGuia = () => G.find(g => !S.lidos[g.id]);
+const faseAtual = () => {
+  if (!cfg.nasc) return 'pre';
+  const d = Math.floor((inicioDia() - inicioDia(+new Date(cfg.nasc))) / DIA);
+  return d <= 7 ? 's1' : d <= 30 ? 'm1' : d <= 91 ? 'm2' : d <= 182 ? 'm4' : d <= 273 ? 'm7' : 'm10';
+};
+const nomeFase = k => (FASES.find(f => f[0] === k) || [0, ''])[1];
+const naFase = (g, f) => !!(g.fase && g.fase.includes(f));
+const proximoGuia = () => G.find(g => !S.lidos[g.id] && naFase(g, faseAtual())) || G.find(g => !S.lidos[g.id]);
 function itemGuia(g) {
   return `<button class="acao" data-a="guiaAbrir" data-id="${g.id}"><i class="bolha ${g.cat === 'sos' ? 'b-alerta' : 'b-pri'}" style="font-size:1.4rem">${g.e}</i><span style="flex:1;min-width:0">${esc(g.t)}<small>${esc(g.r)}</small></span>${S.lidos[g.id] ? '<span class="tag verde">lido</span>' : ''}</button>`;
 }
 function guiasVisiveis() {
   const q = norm(V.q);
-  return G.filter(g => (V.cat === 'todos' || (V.cat === 'fav' ? S.fav[g.id] : g.cat === V.cat)) && (!q || norm([g.t, g.r, ...g.p].join(' ')).includes(q)));
+  const fa = V.fase === 'agora' ? faseAtual() : V.fase;
+  return G.filter(g => (V.cat === 'todos' || (V.cat === 'fav' ? S.fav[g.id] : g.cat === V.cat)) && (!fa || naFase(g, fa)) && (!q || norm([g.t, g.r, ...g.p].join(' ')).includes(q)));
 }
 function listaGuias() {
   const l = guiasVisiveis();
@@ -382,7 +391,10 @@ function telaGuia() {
   return `<h2>Guia do Pai</h2><p class="mute">Passo a passo para quem está começando. Você leu ${lidos} de ${G.length}. Guia de apoio: não substitui o pediatra.</p>
   <div class="barra"><i style="width:${Math.round(lidos / G.length * 100)}%"></i></div>
   <input id="gq" type="search" placeholder="Buscar: banho, febre, cólica..." value="${esc(V.q)}" autocomplete="off">
-  <div class="abas" style="margin-top:10px">${[['todos', 'Todos'], ['fav', '⭐ Favoritos'], ...CATS].map(([k, n]) => `<button class="${V.cat === k ? 'on' : ''}" data-a="guiaCat" data-t="${k}">${n}</button>`).join('')}</div>
+  <p class="rotulo" style="margin:12px 0 4px">Fase da Maya</p>
+  <div class="abas">${[['', 'Todas'], ['agora', '📍 Agora'], ...FASES].map(([k, n]) => `<button class="${V.fase === k ? 'on' : ''}" data-a="guiaFase" data-t="${k}">${n}</button>`).join('')}</div>
+  <p class="rotulo" style="margin:12px 0 4px">Assunto</p>
+  <div class="abas">${[['todos', 'Todos'], ['fav', '⭐ Favoritos'], ...CATS].map(([k, n]) => `<button class="${V.cat === k ? 'on' : ''}" data-a="guiaCat" data-t="${k}">${n}</button>`).join('')}</div>
   <div id="guiaLista">${listaGuias()}</div>`;
 }
 const PS = { g: null, i: 0 };
@@ -506,6 +518,7 @@ const ACOES = {
   ir: el => ir(el.dataset.t),
   guiaAbrir: el => { V.tab = 'guia'; V.guia = el.dataset.id; window.scrollTo(0, 0); render(); },
   guiaVoltar: () => { V.guia = null; render(); },
+  guiaFase: el => { V.fase = el.dataset.t; render(); },
   guiaCat: el => { V.cat = el.dataset.t; render(); },
   guiaFav: el => { const id = el.dataset.id; if (S.fav[id]) delete S.fav[id]; else S.fav[id] = 1; salvar(); render(); },
   guiaProx: el => { const id = el.dataset.id; S.lidos[id] = S.lidos[id] || Date.now(); salvar(); const n = el.dataset.n; if (n) { V.guia = n; window.scrollTo(0, 0); render(); toast('Guia marcado como lido ✅'); } else { V.guia = null; render(); toast('Você chegou ao fim da lista 🎉'); } },
